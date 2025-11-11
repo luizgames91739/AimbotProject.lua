@@ -32,7 +32,6 @@ end
 
 -- GUI: Painel inferior com "Aimbot Status :" e bolinha clicável
 local function createStatusGui()
-	-- Parent no PlayerGui (mais seguro)
 	local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui") or Instance.new("ScreenGui", LocalPlayer)
 	if not playerGui.Parent then
 		playerGui.Name = "LeviathanAimbotGui"
@@ -40,7 +39,6 @@ local function createStatusGui()
 		playerGui.Parent = LocalPlayer
 	end
 
-	-- se já existir, remover pra recriar limpo
 	local existing = playerGui:FindFirstChild("LeviathanAimbotGuiFrame")
 	if existing then existing:Destroy() end
 
@@ -52,7 +50,7 @@ local function createStatusGui()
 	local frame = Instance.new("Frame")
 	frame.Name = "StatusFrame"
 	frame.AnchorPoint = Vector2.new(0.5, 1)
-	frame.Position = UDim2.new(0.5, 0, 1, -30) -- centro inferior, 30px acima da borda
+	frame.Position = UDim2.new(0.5, 0, 1, -30)
 	frame.Size = UDim2.new(0, 260, 0, 28)
 	frame.BackgroundTransparency = 0.2
 	frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
@@ -74,7 +72,6 @@ local function createStatusGui()
 	label.TextXAlignment = Enum.TextXAlignment.Left
 	label.Parent = frame
 
-	-- Bolinha que representa status (usamos um TextButton para ser clicável)
 	local dotBtn = Instance.new("TextButton")
 	dotBtn.Name = "StatusDot"
 	dotBtn.AnchorPoint = Vector2.new(1, 0.5)
@@ -87,20 +84,17 @@ local function createStatusGui()
 	local dotCorner = Instance.new("UICorner", dotBtn)
 	dotCorner.CornerRadius = UDim.new(1, 0)
 
-	-- Função para atualizar cor da bolinha
 	local function updateDot()
 		if dotBtn and dotBtn.Parent then
 			dotBtn.BackgroundColor3 = aimbotEnabled and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(200, 0, 0)
 		end
 	end
 
-	-- Clique no botão alterna o aimbot
 	dotBtn.MouseButton1Click:Connect(function()
 		aimbotEnabled = not aimbotEnabled
 		updateDot()
 	end)
 
-	-- Expor função de atualização caso precise
 	return {
 		Update = updateDot,
 		Destroy = function()
@@ -111,7 +105,6 @@ end
 
 local statusGuiController = createStatusGui()
 
--- Keybind H para alternar o aimbot
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
 	if input.UserInputType == Enum.UserInputType.Keyboard then
@@ -119,28 +112,25 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 			aimbotEnabled = not aimbotEnabled
 			if statusGuiController and statusGuiController.Update then statusGuiController.Update() end
 		elseif input.KeyCode == Enum.KeyCode.Delete then
-			-- Delete para remover desenhos e GUI
 			RunService:UnbindFromRenderStep("FOVUpdate")
 			FOVring:Remove()
 			for _, esp in pairs(ESPs) do
 				if esp.Box then esp.Box:Remove() end
 				if esp.Name then esp.Name:Remove() end
 				if esp.Health then esp.Health:Remove() end
+				if esp.Tracer then esp.Tracer:Remove() end
 			end
 			if statusGuiController and statusGuiController.Destroy then statusGuiController.Destroy() end
 		end
 	end
 end)
 
--- Também conectamos clique pra Delete via GUI: caso usuário feche de outra forma
--- (mantemos compatibilidade com remoção anterior)
 local function lookAt(target)
 	local lookVector = (target - Cam.CFrame.Position).unit
 	local newCFrame = CFrame.new(Cam.CFrame.Position, Cam.CFrame.Position + lookVector)
 	Cam.CFrame = newCFrame
 end
 
--- Raycast (para mira)
 local function hasLineOfSight(part)
 	local origin = Cam.CFrame.Position
 	local direction = part.Position - origin
@@ -156,7 +146,7 @@ local function hasLineOfSight(part)
 	return result.Instance:IsDescendantOf(part.Parent)
 end
 
--- Cria ESP (quadrado + nome + vida)
+-- Cria ESP (quadrado + nome + vida + linha)
 local function createESP(player)
 	local box = Drawing.new("Square")
 	box.Color = Color3.fromRGB(128, 0, 255)
@@ -183,16 +173,21 @@ local function createESP(player)
 	health.Font = 3
 	health.Visible = false
 
-	ESPs[player] = { Box = box, Name = name, Health = health }
+	local tracer = Drawing.new("Line")
+	tracer.Color = Color3.fromRGB(170, 0, 255)
+	tracer.Thickness = 1.5
+	tracer.Visible = false
+
+	ESPs[player] = { Box = box, Name = name, Health = health, Tracer = tracer }
 end
 
--- Atualiza ESP e textos (atravessa paredes)
 local function updateESP(player)
 	if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
 		if ESPs[player] then
 			ESPs[player].Box.Visible = false
 			ESPs[player].Name.Visible = false
 			ESPs[player].Health.Visible = false
+			if ESPs[player].Tracer then ESPs[player].Tracer.Visible = false end
 		end
 		return
 	end
@@ -207,23 +202,21 @@ local function updateESP(player)
 	local box = ESPs[player].Box
 	local name = ESPs[player].Name
 	local health = ESPs[player].Health
+	local tracer = ESPs[player].Tracer
 
 	if pos.Z > 0 then
-		-- Quadrado
 		local height = math.abs(top.Y - bottom.Y)
 		local width = height * 0.6
 		box.Size = Vector2.new(width, height)
 		box.Position = Vector2.new(pos.X - width / 2, pos.Y - height / 2)
 		box.Visible = true
 
-		-- Nome acima da cabeça
 		if head then
 			local headPos = Cam:WorldToViewportPoint(head.Position + Vector3.new(0, 2.5, 0))
 			name.Position = Vector2.new(headPos.X, headPos.Y)
 			name.Visible = true
 		end
 
-		-- HP logo abaixo do nome
 		if humanoid then
 			local hp = math.floor(humanoid.Health)
 			local maxHp = math.floor(humanoid.MaxHealth)
@@ -232,14 +225,32 @@ local function updateESP(player)
 			health.Position = Vector2.new(hpPos.X, hpPos.Y)
 			health.Visible = true
 		end
+
+		-- Linha da SUA POSIÇÃO atual até o player (tracer)
+		local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+		if myRoot then
+			local myPos3, myOnScreen = Cam:WorldToViewportPoint(myRoot.Position)
+			local rootPos3, rootOnScreen = Cam:WorldToViewportPoint(hrp.Position)
+			-- Desenha se pelo menos o alvo estiver à frente da câmera
+			if rootPos3.Z > 0 then
+				tracer.From = Vector2.new(myPos3.X, myPos3.Y)
+				tracer.To = Vector2.new(rootPos3.X, rootPos3.Y)
+				tracer.Visible = true
+			else
+				tracer.Visible = false
+			end
+		else
+			-- Se não tiver HumanoidRootPart local, esconde tracer
+			tracer.Visible = false
+		end
 	else
 		box.Visible = false
 		name.Visible = false
 		health.Visible = false
+		tracer.Visible = false
 	end
 end
 
--- Acha jogador mais próximo dentro do FOV (que não está atrás da parede)
 local function getClosestPlayerInFOV(trg_part)
 	local nearest = nil
 	local last = math.huge
@@ -263,7 +274,6 @@ local function getClosestPlayerInFOV(trg_part)
 	return nearest
 end
 
--- Cria ESPs novos
 Players.PlayerAdded:Connect(function(player)
 	player.CharacterAdded:Connect(function()
 		task.wait(1)
@@ -271,14 +281,12 @@ Players.PlayerAdded:Connect(function(player)
 	end)
 end)
 
--- Inicializa ESPs existentes
 for _, player in ipairs(Players:GetPlayers()) do
 	if player ~= LocalPlayer then
 		createESP(player)
 	end
 end
 
--- Loop principal
 RunService.RenderStepped:Connect(function()
 	updateDrawings()
 
@@ -288,7 +296,6 @@ RunService.RenderStepped:Connect(function()
 		end
 	end
 
-	-- Só mira se o aimbot estiver habilitado
 	if aimbotEnabled then
 		local closest = getClosestPlayerInFOV("Head")
 		if closest and closest.Character and closest.Character:FindFirstChild("Head") then
